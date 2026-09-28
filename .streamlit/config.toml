@@ -1,0 +1,13 @@
+# Paleta da especificação do dashboard (Pacaembu Construtora) e fonte Inter.
+[theme]
+base = "light"
+primaryColor = "#064D66"
+backgroundColor = "#F5F8FA"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1F2937"
+borderColor = "#CBD8DE"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+
+[client]
+toolbarMode = "viewer"
