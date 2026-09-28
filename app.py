@@ -47,6 +47,7 @@ st.html(f"""<style>
 
 # login antes de qualquer dado (mesma tabela acesso.app_users dos outros painéis)
 auth.exigir_login()
+auth.exigir_acesso_ao_painel("turnover")  # matriz de acessos (acesso.v_permissoes)
 
 
 # ----------------------------------------------------------------------------- dados

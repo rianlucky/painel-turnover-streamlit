@@ -236,3 +236,41 @@ def exigir_login() -> None:
     else:
         _tela_senha(usuario)
     st.stop()
+
+
+# ----------------------------------------------------------------------------- acesso por painel
+# Matriz de acessos (migrações 013/014): depois do login, confere se o e-mail pode abrir ESTE
+# painel em acesso.v_permissoes (grupos + exceções), administrada na tela local
+# _neon/acessos/admin_acessos.py. Nega se o banco falhar. Consulta uma vez por sessão.
+
+def exigir_acesso_ao_painel(painel: str) -> None:
+    usuario = st.session_state.get("auth_user")
+    if not usuario:
+        return
+    email = usuario["email"]
+    chave = f"_acesso_{painel}"
+    if st.session_state.get(chave) != email:
+        try:
+            with _conectar() as conn, conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM acesso.v_permissoes WHERE email = %s AND painel = %s LIMIT 1", (email, painel))
+                pode = cur.fetchone() is not None
+        except Exception:  # noqa: BLE001 — sem conseguir conferir, não libera
+            pode = None
+        if pode:
+            st.session_state[chave] = email
+            return
+
+        def form() -> None:
+            if pode is None:
+                st.error("Não foi possível conferir o seu acesso agora. Tente de novo em alguns segundos.")
+                if st.button("Tentar novamente", width="stretch"):
+                    st.rerun()
+            else:
+                st.warning(f"O usuário **{email}** não tem acesso a este painel. Solicite a inclusão para **{_email_suporte()}**.")
+            if st.button("Sair", key="sair_sem_acesso", width="stretch"):
+                st.session_state["auth_user"] = None
+                st.session_state["auth_email"] = None
+                st.rerun()
+
+        _cartao("Sem acesso a este painel", "Seu login está ativo, mas este painel não está liberado para você.", form)
+        st.stop()
