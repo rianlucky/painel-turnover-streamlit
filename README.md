@@ -3,7 +3,8 @@
 Painel Streamlit migrado do dashboard AI/BI "Dashboard Turnover" do Databricks
 (especificação em `00 - Central de Gente & Dados/ZZ - Prompts Migração Databricks - Streamlit+Neon/Dashboard_Turnover_Streamlit_Spec.md`).
 Lê **só do Neon**, por uma view própria no Neon, com um usuário de banco só de leitura.
-Sem login durante o desenvolvimento; o login entra na publicação.
+Com login: o mesmo dos outros painéis da Central (`acesso.app_users`, `auth.py`); quem já tem
+acesso em outro painel entra com a mesma senha. O e-mail de suporte vem dos Secrets (`[app] email_suporte`).
 
 ## Rodar
 
@@ -18,6 +19,7 @@ streamlit run app.py
 | Arquivo | Para quê |
 |---|---|
 | `app.py` | Tela: cards, filtros, gráficos (Vega-Lite) e resumo por diretoria/área |
+| `auth.py` | Login por e-mail (mesmo fluxo e visual da Aderência Salarial) |
 | `metricas.py` | Todos os cálculos, sem Streamlit. O relatório de validação (`_neon/validacao`) usa o mesmo módulo |
 | `painel_padrao.py` | Barra lateral no padrão da Central (logo, conta, filtros, Fonte/Atualizado em) — skill `padrao-painel-streamlit` |
 | `assets/icone-turnover.png` | Ícone do painel |

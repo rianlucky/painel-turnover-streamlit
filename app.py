@@ -17,6 +17,7 @@ import pandas as pd
 import psycopg2
 import streamlit as st
 
+import auth
 import metricas as m
 import painel_padrao as pp
 
@@ -42,6 +43,10 @@ st.html(f"""<style>
           display:inline-block; padding-bottom:.15rem; margin:.4rem 0 .2rem; }}
 .titulo-graf {{ color:{CINZA_ESCURO}; font-weight:600; font-size:.92rem; margin-bottom:-.4rem; }}
 </style>""")
+
+
+# login antes de qualquer dado (mesma tabela acesso.app_users dos outros painéis)
+auth.exigir_login()
 
 
 # ----------------------------------------------------------------------------- dados
