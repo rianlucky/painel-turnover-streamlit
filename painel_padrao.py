@@ -56,7 +56,7 @@ def _wordmark(icone: str, titulo: str):
             if Path(f).exists():
                 fonte = ImageFont.truetype(f, 34)
                 break
-        fonte = fonte or ImageFont.load_default()
+        fonte = fonte or ImageFont.load_default(size=34)  # Pillow >= 10.1: fonte escalável, não a de 11px
         caixa = ImageDraw.Draw(Image.new("RGBA", (1, 1))).textbbox((0, 0), titulo, font=fonte)
         larg, alt_txt = caixa[2] - caixa[0], caixa[3] - caixa[1]
         tela = Image.new("RGBA", (img.width + 14 + larg + 4, alt), (0, 0, 0, 0))
@@ -68,9 +68,13 @@ def _wordmark(icone: str, titulo: str):
 
 
 def logo(icone: str | Path, titulo: str) -> None:
-    icone = str(icone)
-    marca = _wordmark(icone, titulo)
-    st.logo(marca if marca is not None else icone, icon_image=icone, size="large")
+    """Usa assets/logo-wordmark.png (ícone + nome já desenhados) quando existe. Gerar a imagem na
+    hora depende das fontes do Windows, que o Streamlit Cloud (Linux) não tem: lá o nome saía
+    minúsculo (fonte de emergência de ~11px). Ver a skill padrao-painel-streamlit."""
+    icone = Path(icone)
+    pronto = icone.parent / "logo-wordmark.png"
+    marca = str(pronto) if pronto.exists() else _wordmark(str(icone), titulo)
+    st.logo(marca if marca is not None else str(icone), icon_image=str(icone), size="large")
 
 
 def _conta() -> None:
