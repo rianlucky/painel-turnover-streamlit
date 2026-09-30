@@ -1,4 +1,5 @@
-# Paleta da especificação do dashboard (Pacaembu Construtora) e fonte Inter.
+# Tema padrão dos painéis da Central de Gente & Dados (Pacaembu Construtora).
+# Fonte Nunito: arredondada, a mais próxima da Gotham Rounded institucional, a mesma do Hub de Indicadores.
 [theme]
 base = "light"
 primaryColor = "#064D66"
@@ -6,8 +7,14 @@ backgroundColor = "#F5F8FA"
 secondaryBackgroundColor = "#FFFFFF"
 textColor = "#1F2937"
 borderColor = "#CBD8DE"
-font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+font = "Nunito:https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap"
+headingFont = "Nunito:https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap"
+
+[theme.sidebar]
+backgroundColor = "#FFFFFF"
 
 [client]
 toolbarMode = "viewer"
+
+[browser]
+gatherUsageStats = false

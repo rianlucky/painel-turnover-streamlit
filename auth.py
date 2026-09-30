@@ -1,11 +1,11 @@
 """Login por e-mail — o mesmo dos outros painéis da Central (tabela acesso.app_users no Neon).
 
-Mesmo fluxo e mesmo visual da Aderência Salarial / Headcount Total: o acesso é liberado
-cadastrando o e-mail em acesso.app_users (grant_access.py dos outros painéis); no primeiro
+O acesso é liberado cadastrando o e-mail em acesso.app_users (ferramenta local de acessos,
+_neon/acessos/admin_acessos.py); no primeiro
 login a pessoa cria a senha; depois de MAX_TENTATIVAS senhas erradas seguidas a conta fica
 bloqueada por BLOQUEIO_MINUTOS. Quem já tem login em outro painel entra com a mesma senha.
 
-O usuário de banco do painel lê e atualiza acesso.app_users pelo grupo grp_auth (migração 012).
+O usuário de banco do painel lê e atualiza acesso.app_users pelo grupo de login (migração 012).
 E-mail de suporte: [app] email_suporte nos Secrets (fora do código, que é público).
 """
 from __future__ import annotations
@@ -28,35 +28,52 @@ ICONE = Path(__file__).parent / "assets" / "icone-turnover.png"
 TITULO = "Turnover"
 SUBTITULO = "Admissões, desligamentos e taxa de turnover da Pacaembu Construtora"
 
+# Tela de login padrão da Central (29/09/2026): um cartão só, centralizado, que funciona igual em
+# computador, tablet e celular. Topo com formas nas cores da marca + ícone do painel; campos com
+# rótulo (fonte 16px: o iPhone não dá zoom), Enter envia (st.form), botões de 46px para toque,
+# ação principal em azul e "Voltar"/"Sair" em cinza.
 _CSS = """<style>
-.st-key-login_page { margin-top: 10vh; }
-[data-testid="stVerticalBlockBorderWrapper"].st-key-login_card {
-    border: none !important; border-radius: 16px; overflow: hidden; padding: 0 !important;
-    box-shadow: 0 14px 40px rgba(6, 77, 102, .18);
+[data-testid="stMainBlockContainer"] { padding-top: 2rem; }
+.st-key-login_page { display: flex; justify-content: center; margin-top: 5vh; }
+.st-key-login_card {
+    width: min(440px, 100%) !important; margin: 0 auto; background: #FFFFFF; border-radius: 22px;
+    box-shadow: 0 18px 50px rgba(6, 77, 102, .16); overflow: hidden; padding: 0 0 24px !important; gap: 0 !important;
 }
-.st-key-login_card [data-testid="stHorizontalBlock"] { gap: 0 !important; }
-.st-key-login_left {
-    background: linear-gradient(160deg, #064D66 0%, #2a78d6 100%);
-    min-height: 460px; height: 100%; padding: 48px 30px;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+.login-hero { position: relative; height: 176px; overflow: hidden; background: #FFFFFF; }
+.login-hero .forma-amarela { position: absolute; left: -70px; top: -120px; width: 330px; height: 290px; border-radius: 50%;
+    background: linear-gradient(160deg, #FFA724 0%, #FAB900 100%); }
+.login-hero .forma-azul { position: absolute; right: -90px; top: -150px; width: 330px; height: 330px; border-radius: 50%;
+    background: linear-gradient(200deg, #003244 0%, #064D66 70%); }
+.login-hero .forma-vermelha { position: absolute; right: 40px; top: 118px; width: 14px; height: 14px; border-radius: 50%; background: #F02727; }
+.login-icone { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); width: 84px; height: 84px; border-radius: 22px;
+    background: #FFFFFF; box-shadow: 0 10px 26px rgba(0, 50, 68, .22); display: flex; align-items: center; justify-content: center; }
+.login-icone img { width: 58px; height: 58px; object-fit: contain; display: block; }
+.login-marca { text-align: center; padding: 14px 30px 4px; }
+.login-marca .nome { font-size: 1.35rem; font-weight: 700; color: #064D66; line-height: 1.25; }
+.login-marca .sub { font-size: .83rem; color: #6B7280; line-height: 1.45; margin-top: 4px; }
+.login-passo { padding: 18px 30px 4px; }
+.login-passo .titulo { font-size: 1.02rem; font-weight: 650; color: #1F2937; }
+.login-passo .sub { font-size: .84rem; color: #6B7280; margin-top: 2px; line-height: 1.45; overflow-wrap: anywhere; }
+.st-key-login_form { padding: 6px 30px 0; }
+.st-key-login_form [data-testid="stForm"] { border: none; padding: 0; }
+.st-key-login_form label p { font-size: .82rem !important; font-weight: 600; color: #374151; }
+.st-key-login_form input { font-size: 16px !important; min-height: 44px; }
+.st-key-login_form [data-baseweb="input"] { border-radius: 10px; }
+.st-key-login_form button { min-height: 46px; border-radius: 10px !important; font-weight: 600 !important; }
+.st-key-login_form button[kind^="primary"] { background: #064D66 !important; border: none !important; }
+.st-key-login_form button[kind^="primary"]:hover { background: #003244 !important; }
+.st-key-login_form button[kind^="primary"] p { color: #FFFFFF !important; font-weight: 600; }
+.st-key-login_form button[kind^="secondary"] { background: #F3F4F6 !important; border: 1px solid #E5E7EB !important; }
+.st-key-login_form button[kind^="secondary"] p { color: #4B5563 !important; font-weight: 600; }
+.st-key-login_form button[kind^="secondary"]:hover { background: #E5E7EB !important; }
+.login-rodape { text-align: center; font-size: .72rem; color: #9CA3AF; padding: 16px 30px 0; letter-spacing: .02em; }
+@media (max-width: 640px) {
+    .st-key-login_page { margin-top: 0; }
+    [data-testid="stMainBlockContainer"] { padding: 3.6rem .75rem 1rem; }
+    .st-key-login_card { border-radius: 18px; }
+    .login-hero { height: 158px; }
+    .login-marca, .login-passo, .st-key-login_form, .login-rodape { padding-left: 20px; padding-right: 20px; }
 }
-.login-logo-pill {
-    background: #FFFFFF; color: #064D66; border-radius: 12px; padding: 14px 18px;
-    display: inline-flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 22px;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, .18); max-width: 100%; box-sizing: border-box;
-    font-weight: 700; font-size: 15px;
-}
-.login-logo-pill img { height: 26px; width: auto; display: block; }
-.login-brand-sub { color: rgba(255, 255, 255, .88); font-size: 12px; line-height: 1.65; max-width: 220px; margin: 0 auto; text-align: center; }
-.st-key-login_right { padding: 48px 44px; min-height: 460px; height: 100%; display: flex; flex-direction: column; justify-content: center; }
-.login-form-title { font-size: 18px; font-weight: 600; color: #111110; margin: 0 0 4px; line-height: 1.4; }
-.login-form-sub { font-size: 12.5px; color: #6b6b68; margin: 0 0 22px; line-height: 1.5; }
-.st-key-login_right div[data-testid="stButton"] button {
-    background: linear-gradient(160deg, #064D66 0%, #2a78d6 100%) !important; border: none !important;
-    font-weight: 600 !important; border-radius: 8px !important; padding: 10px 0 !important;
-}
-.st-key-login_right div[data-testid="stButton"] button p { color: #FFFFFF !important; }
-.st-key-login_right div[data-testid="stButton"] button:hover { filter: brightness(1.08); }
 </style>"""
 
 
@@ -139,52 +156,61 @@ def _icone_b64() -> str:
 
 def _cartao(titulo: str, subtitulo: str, formulario: Callable[[], None]) -> None:
     st.html(_CSS)
-    with st.container(key="login_page"):
-        _, meio, _ = st.columns([1, 2.3, 1])
-        with meio, st.container(border=True, key="login_card"):
-            esq, dir_ = st.columns([1, 1.25])
-            with esq, st.container(key="login_left"):
-                st.html(f'<div class="login-logo-pill"><img src="{_icone_b64()}" alt="" />{TITULO}</div>'
-                        f'<p class="login-brand-sub">{SUBTITULO}</p>')
-            with dir_, st.container(key="login_right"):
-                st.html(f'<div class="login-form-title">{titulo}</div><p class="login-form-sub">{subtitulo}</p>')
-                formulario()
+    with st.container(key="login_page"), st.container(key="login_card"):
+        st.html(f"""<div class="login-hero"><div class="forma-amarela"></div><div class="forma-azul"></div>
+            <div class="forma-vermelha"></div><div class="login-icone"><img src="{_icone_b64()}" alt="" /></div></div>
+            <div class="login-marca"><div class="nome">{TITULO}</div><div class="sub">{SUBTITULO}</div></div>
+            <div class="login-passo"><div class="titulo">{titulo}</div><div class="sub">{subtitulo}</div></div>""")
+        with st.container(key="login_form"):
+            formulario()
+        st.html('<div class="login-rodape">Pacaembu Construtora · Central de Gente &amp; Dados</div>')
+
+
+def _voltar(rotulo: str = "Voltar", key: str = "login_voltar") -> None:
+    """Botão cinza que volta para a tela do e-mail."""
+    if st.button(rotulo, key=key, width="stretch"):
+        st.session_state["auth_user"] = None
+        st.session_state["auth_email"] = None
+        st.rerun()
 
 
 def _tela_email() -> None:
     def form() -> None:
-        email = st.text_input("E-mail", label_visibility="collapsed", placeholder="seu.email@pacaembu.com")
-        if st.button("Continuar", width="stretch"):
+        with st.form("login_email", border=False):
+            email = st.text_input("E-mail corporativo", placeholder="seu.email@pacaembu.com", autocomplete="email")
+            enviar = st.form_submit_button("Continuar", type="primary", width="stretch")
+        if enviar:
             if "@" not in normalizar(email):
                 st.error("Informe um e-mail válido.")
             else:
                 st.session_state["auth_email"] = normalizar(email)
                 st.rerun()
-    _cartao("Entrar", "Digite seu e-mail corporativo para acessar o painel.", form)
+    _cartao("Entrar", "Use o seu e-mail da Pacaembu Construtora.", form)
 
 
 def _tela_erro_conexao() -> None:
     def form() -> None:
         st.error("Não foi possível conectar ao banco de dados agora. Isso costuma ser passageiro — tente de novo em alguns segundos.")
-        if st.button("Tentar novamente", width="stretch"):
+        if st.button("Tentar novamente", type="primary", width="stretch"):
             st.rerun()
+        _voltar()
     _cartao("Erro temporário de conexão", "Não conseguimos falar com o banco de dados agora.", form)
 
 
 def _tela_sem_acesso(email: str) -> None:
     def form() -> None:
-        st.warning(f"O e-mail **{email}** ainda não tem acesso a este painel. Solicite a inclusão para **{_email_suporte()}**.")
-        if st.button("Tentar outro e-mail", width="stretch"):
-            st.session_state["auth_email"] = None
-            st.rerun()
+        st.warning(f"O e-mail **{email}** ainda não tem acesso. Solicite a inclusão para **{_email_suporte()}**.")
+        _voltar()
     _cartao("Acesso não encontrado", "Esse e-mail ainda não está liberado.", form)
 
 
 def _tela_criar_senha(usuario: dict) -> None:
     def form() -> None:
-        senha = st.text_input("Senha", type="password", placeholder="Crie uma senha (mín. 8 caracteres)")
-        conf = st.text_input("Confirmar senha", type="password", placeholder="Digite a senha de novo")
-        if st.button("Criar senha e entrar", width="stretch"):
+        with st.form("login_criar_senha", border=False):
+            senha = st.text_input("Nova senha", type="password", placeholder="Mínimo de 8 caracteres", autocomplete="new-password")
+            conf = st.text_input("Confirmar senha", type="password", placeholder="Digite a senha de novo", autocomplete="new-password")
+            enviar = st.form_submit_button("Criar senha e entrar", type="primary", width="stretch")
+        if enviar:
             if len(senha) < 8:
                 st.error("A senha precisa ter pelo menos 8 caracteres.")
             elif senha != conf:
@@ -192,7 +218,8 @@ def _tela_criar_senha(usuario: dict) -> None:
             else:
                 st.session_state["auth_user"] = criar_senha(usuario["email"], senha)
                 st.rerun()
-    _cartao(f"Olá, {usuario.get('name') or usuario['email']}", "Este é seu primeiro acesso — crie uma senha.", form)
+        _voltar()
+    _cartao(f"Olá, {usuario.get('name') or usuario['email']}", "Primeiro acesso: crie a sua senha. Ela vale para todos os painéis.", form)
 
 
 def _tela_senha(usuario: dict) -> None:
@@ -200,8 +227,10 @@ def _tela_senha(usuario: dict) -> None:
         if bloqueado(usuario):
             st.warning(f"Conta temporariamente bloqueada por tentativas de senha incorreta. Tente de novo em ~{minutos_restantes(usuario)} minuto(s).")
         else:
-            senha = st.text_input("Senha", type="password", label_visibility="collapsed", placeholder="Digite sua senha")
-            if st.button("Entrar", width="stretch"):
+            with st.form("login_senha", border=False):
+                senha = st.text_input("Senha", type="password", placeholder="Digite sua senha", autocomplete="current-password")
+                enviar = st.form_submit_button("Entrar", type="primary", width="stretch")
+            if enviar:
                 ok = verificar(usuario["email"], senha)
                 if ok:
                     st.session_state["auth_user"] = ok
@@ -209,10 +238,8 @@ def _tela_senha(usuario: dict) -> None:
                 novo = buscar_usuario(usuario["email"])
                 st.error(f"Muitas tentativas erradas — conta bloqueada por ~{minutos_restantes(novo)} minuto(s)."
                          if novo and bloqueado(novo) else "Senha incorreta.")
-        if st.button("Usar outro e-mail", key="trocar_email"):
-            st.session_state["auth_email"] = None
-            st.rerun()
-    _cartao(f"Olá, {usuario.get('name') or usuario['email']}", "Digite sua senha para entrar.", form)
+        _voltar()
+    _cartao(f"Olá, {usuario.get('name') or usuario['email']}", f"Digite a senha de {usuario['email']}.", form)
 
 
 def exigir_login() -> None:
@@ -263,14 +290,11 @@ def exigir_acesso_ao_painel(painel: str) -> None:
         def form() -> None:
             if pode is None:
                 st.error("Não foi possível conferir o seu acesso agora. Tente de novo em alguns segundos.")
-                if st.button("Tentar novamente", width="stretch"):
+                if st.button("Tentar novamente", type="primary", width="stretch"):
                     st.rerun()
             else:
                 st.warning(f"O usuário **{email}** não tem acesso a este painel. Solicite a inclusão para **{_email_suporte()}**.")
-            if st.button("Sair", key="sair_sem_acesso", width="stretch"):
-                st.session_state["auth_user"] = None
-                st.session_state["auth_email"] = None
-                st.rerun()
+            _voltar("Sair", key="sair_sem_acesso")
 
         _cartao("Sem acesso a este painel", "Seu login está ativo, mas este painel não está liberado para você.", form)
         st.stop()

@@ -50,3 +50,36 @@ streamlit run app.py
 Conferência (28/09/2026, referência 27/09): admissões, desligamentos e taxa de agosto, headcount
 total e da Diretoria Comercial e headcount por diretoria batem com a régua do relatório de
 validação. Os desligamentos de agosto batem pessoa a pessoa com o dashboard do Databricks (53).
+
+## Padrão visual atualizado (30/09/2026)
+
+Login padrão da Central (card único, adaptável a celular), título em Nunito com selos de "Atualizado em" e dos filtros aplicados (vão junto num print/PDF), cards com o recorte em seta da marca e "i" explicando a taxa de turnover, seções numeradas por título e impressão em A4 deitada (cada seção numa folha). Cálculos e regras sem mudança.
+
+## Regra de negócio: recontratação em até 10 dias (30/09/2026)
+
+Quando o mesmo colaborador é readmitido em até 10 dias depois de um desligamento (transferência para
+outra empresa do grupo, troca de obra, correção de cadastro), **não é desligamento nem admissão**: é a
+mesma pessoa continuando. Regra em `core.v_turnover_base` (migração `021_recontratacao_10_dias.sql`):
+`desligamento_readmitido` tira o desligamento das contagens e `admissao_real` passa a exigir mais de
+10 dias depois do desligamento anterior (antes: mais de 1 dia, e só do lado da admissão). Vale também
+para o Headcount Total e para a régua da validação (31/31 ✅ depois da mudança). Efeito: 32
+desligamentos a menos nos 12 meses até 29/09/2026.
+
+## Páginas e análises novas (30/09/2026)
+
+Cinco páginas na barra lateral (st.navigation):
+- **Visão geral** — cards, evolução, taxa por área, sexo, tempo de casa, faixa etária e resumo por
+  diretoria e área; nota com a taxa do mês sem estagiários.
+- **Turnover voluntário** — a seção de antes (filtro de motivo) + **cargos com mais pedidos de demissão**
+  (pelo menos 3 no período, % voluntário e tempo de casa de quem pediu).
+- **Período de experiência** — saídas com até 90 dias de casa (prazo da CLT): total e % das saídas,
+  "de cada 100 admitidos, quantos saem antes dos 90 dias" (turma que já completaria 90 dias), quem
+  pediu x quem foi desligado, evolução mensal e áreas/cargos com mais casos.
+- **Retenção por turma** — de quem foi admitido em cada mês (últimos 18), o % que continua 3, 6 e 12
+  meses depois; média ponderada nos cards, curva e tabela colorida.
+- **Perfil das saídas** — taxa de turnover (total ou só voluntário) por nível de gerenciamento, frente,
+  raça/cor, escolaridade (5 níveis) e vínculo; grupos com menos de 10 pessoas em média ficam de fora.
+
+Barra lateral: **Estagiários: Incluir / Tirar** (tira estagiários de todas as contagens — o fim do
+estágio é saída prevista) e filtros novos **Frente** e **Nível**. Colunas novas na view pela migração
+`022_turnover_perfil.sql` (nível, frente, raça/cor, escolaridade, vínculo, cargo).

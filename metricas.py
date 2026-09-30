@@ -8,6 +8,9 @@ especificação do dashboard do Databricks (ZZ - Prompts Migração.../Dashboard
      pessoas distintas
   4. Admissão "real": não conta recontratação no dia seguinte a um desligamento
   5. Desligamento incorreto (flag da silver 00004) nunca conta
+  6. Recontratação em até 10 dias (30/09/2026): desligamento seguido de nova admissão da mesma pessoa
+     em até 10 dias não é desligamento, e essa readmissão não é admissão (view: desligamento_readmitido,
+     admissao_real; migração 021)
 Diferenças deliberadas em relação ao Databricks (ver README.md):
   - data de referência = foto mais recente da base (não CURRENT_DATE)
   - diretoria/área = mapeamento oficial (core.mapeamento_diretoria), não a dim desatualizada
@@ -28,6 +31,34 @@ ORDEM_TEMPO_CASA = ["+ 10 anos", "5 anos a 10 anos", "3 anos a 5 anos", "2 anos 
                     "1 ano a 2 anos", "6 meses a 1 ano", "3 a 6 meses", "0 a 3 meses"]
 ORDEM_FAIXA_ETARIA = ["60+", "55 a 59", "50 a 54", "45 a 49", "40 a 44", "35 a 39", "30 a 34",
                       "25 a 29", "18 a 24", "Menor de 18"]
+NAO_INFORMADO = "Não informado"
+DIAS_EXPERIENCIA = 90  # período de experiência (CLT: até 90 dias)
+ESTAGIARIO = "Estagiário"
+# nível de gerenciamento com as variações juntas (mesmo agrupamento do Headcount, Aderência e Demográficos)
+NIVEL_GERENCIAMENTO = {"Gerente de Vendas": "Gerente", "Gerente Executivo de Obras": "Gerente Executivo",
+                       "Gerente Executivo Estadual de Obras": "Gerente Executivo", "Coordenador de Obras": "Coordenador/Especialista",
+                       "Diretor de Obras": "Diretor"}
+ORDEM_NIVEL = ["Operacional", "Pilotos", "Staff", "Supervisor/Advogado/Engenheiro", "Coordenador/Especialista",
+               "Gerente", "Gerente Executivo", "Diretor", "Conselheiro"]
+ORDEM_FRENTE = ["Obras", "Corporativo", "Comercial"]
+ORDEM_RACA = ["Branca", "Parda", "Preta", "Amarela", "Não Informada"]
+ORDEM_ESCOLARIDADE = ["Até o fundamental", "Ensino médio", "Superior incompleto", "Superior completo", "Pós-graduação"]
+
+
+def escolaridade_grupo(e) -> str:
+    """Os 14 valores do cadastro em 5 níveis (técnico conta como ensino médio)."""
+    e = "" if e is None or pd.isna(e) else str(e)
+    if any(x in e for x in ("Pós", "Mestrado", "Doutorado")):
+        return "Pós-graduação"
+    if "Superior Completo" in e:
+        return "Superior completo"
+    if "Superior Incompleto" in e:
+        return "Superior incompleto"
+    if "Médio" in e:
+        return "Ensino médio"
+    if any(x in e for x in ("Fundamental", "Alfabet", "Analfab")):
+        return "Até o fundamental"
+    return NAO_INFORMADO
 
 
 # ----------------------------------------------------------------------------- preparação
@@ -76,9 +107,17 @@ def preparar(base: pd.DataFrame) -> pd.DataFrame:
     df["faixa_etaria"] = df["idade_desligamento"].map(faixa_etaria)
     for c in ("diretoria", "area", "nome_centro_custo", "familia_cargo", "sexo", "motivo"):
         df[c] = df[c].fillna("Não informado")
+    if "nivel_gerenciamento" in df:  # colunas da migração 022
+        df["nivel"] = df["nivel_gerenciamento"].replace(NIVEL_GERENCIAMENTO).fillna(NAO_INFORMADO)
+        df["escolaridade_grupo"] = df["escolaridade"].map(escolaridade_grupo)
+        df["raca_cor"] = df["raca_cor"].fillna("Não Informada")
+        for c in ("frente", "vinculo", "cargo"):
+            df[c] = df[c].fillna(NAO_INFORMADO)
+        df["estagiario"] = df["vinculo"] == ESTAGIARIO
     # quais desligamentos entram nas contagens: nunca os incorretos; os filtros de motivo e
     # tempo de casa (que só existem no desligamento) desligam os que não batem — ver filtrar_desligamentos
-    df["conta_desligamento"] = ~df["desligamento_incorreto"].astype(bool)
+    df["desligamento_readmitido"] = df["desligamento_readmitido"].fillna(False).astype(bool) if "desligamento_readmitido" in df else False
+    df["conta_desligamento"] = ~df["desligamento_incorreto"].astype(bool) & ~df["desligamento_readmitido"]
     return df
 
 
@@ -140,7 +179,8 @@ def headcount_em(df: pd.DataFrame, d: date) -> int:
 
 def desligamentos(df: pd.DataFrame, ini: date, fim: date) -> pd.DataFrame:
     d = df["data_desligamento"]
-    conta = df["conta_desligamento"] if "conta_desligamento" in df else ~df["desligamento_incorreto"].astype(bool)
+    conta = df["conta_desligamento"] if "conta_desligamento" in df else (
+        ~df["desligamento_incorreto"].astype(bool) & ~df.get("desligamento_readmitido", False))
     return df[d.notna() & (d >= ini) & (d <= fim) & conta]
 
 
@@ -224,11 +264,24 @@ def contagem(des: pd.DataFrame, coluna: str) -> pd.DataFrame:
 HEADCOUNT_MINIMO_AREA = 10  # áreas menores que isso distorcem a taxa (1 saída em 2 pessoas = 50%)
 
 
+def turnover_por(df: pd.DataFrame, coluna: str, ref: date, inicio: date, somente_voluntario: bool = False,
+                 minimo: int = HEADCOUNT_MINIMO_AREA, ordem: list[str] | None = None) -> pd.DataFrame:
+    """Taxa de turnover por uma dimensão (nível, frente, raça/cor, escolaridade…) no período, mesma conta
+    de turnover_por_area: desligamentos (+ admissões) do grupo ÷ headcount médio mensal do grupo.
+    Grupos com headcount médio abaixo de `minimo` ficam de fora; `ordem` fixa a ordem das linhas."""
+    t = turnover_por_area(df.assign(area=df[coluna]), ref, somente_voluntario, top=10_000, inicio=inicio, minimo=minimo)
+    t = t.rename(columns={"area": coluna})
+    if ordem:
+        t = t.set_index(coluna).reindex([o for o in ordem if o in set(t[coluna])] +
+                                        sorted(set(t[coluna]) - set(ordem))).reset_index()
+    return t
+
+
 def turnover_por_area(df: pd.DataFrame, ref: date, somente_voluntario: bool = False, top: int = 10,
-                      inicio: date | None = None) -> pd.DataFrame:
+                      inicio: date | None = None, minimo: int = HEADCOUNT_MINIMO_AREA) -> pd.DataFrame:
     """Taxa de turnover de cada área no período (padrão: últimos 12 meses): soma dos desligamentos (e admissões,
     se não for só voluntário) da área dividida pelo headcount médio mensal da própria área.
-    Só entram áreas com headcount médio >= HEADCOUNT_MINIMO_AREA."""
+    Só entram áreas com headcount médio >= `minimo`."""
     linhas = []
     for area, dfa in df.groupby("area"):
         tot_des = tot_adm = 0
@@ -240,7 +293,7 @@ def turnover_por_area(df: pd.DataFrame, ref: date, somente_voluntario: bool = Fa
             tot_adm += 0 if somente_voluntario else len(admissoes(dfa, ini, fim))
             hcs.append(headcount_em(dfa, mes - timedelta(days=1)))
         hc_medio = sum(hcs) / len(hcs) if hcs else 0
-        if hc_medio >= HEADCOUNT_MINIMO_AREA and area != "Não informado":
+        if hc_medio >= minimo and area != "Não informado":
             taxa = (tot_des / hc_medio) if somente_voluntario else (tot_des + tot_adm) / 2 / hc_medio
             linhas.append({"area": area, "desligamentos": tot_des, "admitidos": tot_adm,
                            "headcount_medio": round(hc_medio, 1), "taxa_turnover": taxa})
@@ -263,3 +316,87 @@ def resumo_diretoria_area(des: pd.DataFrame) -> pd.DataFrame:
     tab["Tempo médio de casa"] = des.groupby(["diretoria", "area"])["tempo_empresa_dias_desligamento"].agg(
         lambda s: tempo_medio_casa(s.to_frame()))
     return tab[["Voluntário", "Involuntário", "Total", "Tempo médio de casa"]].reset_index()
+
+
+# ----------------------------------------------------------------------------- período de experiência
+
+def saidas_experiencia(des: pd.DataFrame) -> pd.DataFrame:
+    """Desligamentos (já filtrados e contados) com até DIAS_EXPERIENCIA dias de casa."""
+    return des[des["tempo_empresa_dias_desligamento"] <= DIAS_EXPERIENCIA]
+
+
+def coorte_experiencia(df: pd.DataFrame, ini: date, ref: date) -> dict:
+    """De quem foi admitido no período e já completou 90 dias até a referência: quantos saíram
+    antes de completar o período de experiência."""
+    limite = ref - timedelta(days=DIAS_EXPERIENCIA)
+    adm = admissoes(df, ini, limite)
+    if adm.empty:
+        return {"admitidos": 0, "sairam": 0, "taxa": None, "ate": limite}
+    dias = (pd.to_datetime(adm["data_desligamento"]) - pd.to_datetime(adm["data_admissao"])).dt.days
+    saiu = adm["data_desligamento"].notna() & adm["conta_desligamento"] & (dias <= DIAS_EXPERIENCIA)
+    return {"admitidos": len(adm), "sairam": int(saiu.sum()), "taxa": float(saiu.mean()), "ate": limite}
+
+
+def evolucao_experiencia(df: pd.DataFrame, ini: date, ref: date) -> pd.DataFrame:
+    """Por mês de desligamento: saídas em experiência e o % delas sobre todos os desligamentos."""
+    linhas = []
+    for mes in meses_entre(ini, ref):
+        des = desligamentos(df, max(mes, ini), min(_fim_mes(mes), ref))
+        exp = saidas_experiencia(des)
+        linhas.append({"periodo": mes, "desligamentos": len(des), "experiencia": len(exp),
+                       "experiencia_voluntario": int(exp["voluntario"].sum()),
+                       "pct": len(exp) / len(des) if len(des) else None})
+    return pd.DataFrame(linhas)
+
+
+# ----------------------------------------------------------------------------- retenção por turma
+
+HORIZONTES_RETENCAO = (3, 6, 12)
+
+
+def _mais_meses(d: date, n: int) -> date:
+    y, m = d.year, d.month + n
+    while m > 12:
+        y, m = y + 1, m - 12
+    while m < 1:
+        y, m = y - 1, m + 12
+    return date(y, m, min(d.day, 28))
+
+
+def retencao_coortes(df: pd.DataFrame, ref: date, n_turmas: int = 18) -> pd.DataFrame:
+    """Turmas de contratação (mês de admissão) dos últimos `n_turmas` meses: admitidos e o % que continua
+    na empresa 3, 6 e 12 meses depois (só quando a turma inteira já tem essa idade). Recontratação em até
+    10 dias não conta como saída (regra da migração 021)."""
+    linhas = []
+    for mes in meses_entre(_mais_meses(ref.replace(day=1), -n_turmas), ref):
+        adm = admissoes(df, mes, min(_fim_mes(mes), ref))
+        if adm.empty:
+            continue
+        linha = {"turma": mes, "admitidos": len(adm)}
+        saida = pd.to_datetime(adm["data_desligamento"].where(adm["conta_desligamento"]))
+        dias_ate_saida = (saida - pd.to_datetime(adm["data_admissao"])).dt.days
+        for h in HORIZONTES_RETENCAO:
+            if _mais_meses(_fim_mes(mes), h) > ref:
+                linha[f"ret_{h}"] = None
+            else:
+                ficou = dias_ate_saida.isna() | (dias_ate_saida > h * 30.4)
+                linha[f"ret_{h}"] = float(ficou.mean())
+        linhas.append(linha)
+    return pd.DataFrame(linhas, columns=["turma", "admitidos"] + [f"ret_{h}" for h in HORIZONTES_RETENCAO])
+
+
+# ----------------------------------------------------------------------------- cargos com mais saídas voluntárias
+
+def cargos_voluntarios(des: pd.DataFrame, top: int = 15, minimo: int = 3) -> pd.DataFrame:
+    """Cargos com mais pedidos de demissão no período (pelo menos `minimo`), com o total de saídas,
+    o % voluntário e o tempo médio de casa de quem pediu para sair."""
+    colunas = ["cargo", "voluntarios", "desligamentos", "pct_voluntario", "tempo_medio"]
+    if des.empty:
+        return pd.DataFrame(columns=colunas)
+    g = des.groupby("cargo")
+    t = pd.DataFrame({"voluntarios": g["voluntario"].sum().astype(int), "desligamentos": g.size()})
+    t["pct_voluntario"] = t["voluntarios"] / t["desligamentos"]
+    vol = des[des["voluntario"]]
+    t["tempo_medio"] = vol.groupby("cargo")["tempo_empresa_dias_desligamento"].agg(lambda x: tempo_medio_casa(x.to_frame()))
+    t = t[t["voluntarios"] >= minimo].sort_values(["voluntarios", "pct_voluntario"], ascending=False).head(top)
+    return t.reset_index()[colunas]
